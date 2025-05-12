@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Meadow Simulation</title>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.8.0/lib/p5.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #f0f8ff;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(255, 255, 255, 0.85);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            font-family: Arial, sans-serif;
+            max-width: 250px;
+            z-index: 100;
+        }
+        #toggleControls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 8px 15px;
+            background-color: rgba(255, 255, 255, 0.85);
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-family: Arial, sans-serif;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            z-index: 100;
+        }
+        .control-group {
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        .color-picker {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .color-picker input {
+            margin-left: 10px;
+        }
+    </style>
+
+<base target="_self">
+
+
+    <div id="controls">
+        <h3>Meadow Controls</h3>
+        
+        <div class="control-group">
+            <label for="windStrength">Wind Strength</label>
+            <input type="range" id="windStrength" min="0" max="2" step="0.1" value="0.5">
+        </div>
+        
+        <div class="control-group">
+            <label for="windDirection">Wind Direction</label>
+            <input type="range" id="windDirection" min="0" max="360" step="1" value="180">
+        </div>
+        
+        <div class="control-group">
+            <label>Flower Colors</label>
+            <div class="color-picker">
+                <span>Petal:</span>
+                <input type="color" id="petalColor" value="#ff69b4">
+            </div>
+            <div class="color-picker">
+                <span>Center:</span>
+                <input type="color" id="centerColor" value="#ffff00">
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label for="beeCount">Bee Population</label>
+            <input type="range" id="beeCount" min="0" max="30" step="1" value="10">
+        </div>
+        
+        <div class="control-group">
+            <label for="timeOfDay">Time of Day</label>
+            <input type="range" id="timeOfDay" min="0" max="24" step="1" value="12">
+        </div>
+    </div>
+    
+    <button id="toggleControls">Toggle Controls</button>
+    
+    <script>
+        const sketch = (p) => {
+            let flowers = [];
+            let bees = [];
+            let grassBlades = [];
+            let windForce = p.createVector(0, 0);
+            let petalHue = 330;
+            let centerHue = 60;
+            let timeOfDay = 12;
+            let skyColor;
+            let showControls = true;
+            
+            // Performance limits
+            const MAX_FLOWERS = 100;
+            const MAX_BEES = 30;
+            const MAX_GRASS = 500;
+            
+            class Flower {
+                constructor(x, y) {
+                    this.pos = p.createVector(x, y);
+                    this.size = p.random(20, 40);
+                    this.stemHeight = p.random(30, 80);
+                    this.petalCount = p.floor(p.random(5, 12));
+                    this.windOffset = p.random(1000);
+                    this.originalPos = p.createVector(x, y);
+                }
+                
+                update(wind) {
+                    // Apply wind effect with some randomness
+                    const windEffect = p.map(p.noise(this.windOffset + p.frameCount * 0.01), 0, 1, -0.5, 1.5);
+                    this.pos.x = this.originalPos.x + wind.x * 10 * windEffect;
+                    this.pos.y = this.originalPos.y + wind.y * 5 * windEffect;
+                    this.windOffset += 0.01;
+                }
+                
+                display() {
+                    // Stem
+                    p.stroke(40, 120, 40);
+                    p.strokeWeight(2);
+                    p.line(this.pos.x, this.pos.y, this.pos.x, this.pos.y + this.stemHeight);
+                    
+                    // Leaves
+                    p.noStroke();
+                    p.fill(40, 120, 40);
+                    p.ellipse(this.pos.x + 5, this.pos.y + this.stemHeight * 0.3, 8, 15);
+                    p.ellipse(this.pos.x - 5, this.pos.y + this.stemHeight * 0.7, 8, 15);
+                    
+                    // Flower center
+                    p.fill(p.color(document.getElementById('centerColor').value));
+                    p.ellipse(this.pos.x, this.pos.y, this.size * 0.4);
+                    
+                    // Petals
+                    p.fill(p.color(document.getElementById('petalColor').value));
+                    for (let i = 0; i < this.petalCount; i++) {
+                        const angle = p.TWO_PI * i / this.petalCount;
+                        const petalX = this.pos.x + p.cos(angle) * this.size * 0.6;
+                        const petalY = this.pos.y + p.sin(angle) * this.size * 0.6;
+                        p.ellipse(petalX, petalY, this.size * 0.5, this.size * 0.3);
+                    }
+                }
+            }
+            
+            class Bee {
+                constructor() {
+                    this.pos = p.createVector(p.random(p.width), p.random(p.height * 0.7));
+                    this.vel = p5.Vector.random2D().mult(0.5);
+                    this.size = p.random(8, 12);
+                    this.angle = 0;
+                    this.wingPhase = p.random(p.TWO_PI);
+                    this.target = null;
+                    this.targetTimer = 0;
+                }
+                
+                update() {
+                    // Random movement with some targeting
+                    if (this.targetTimer <= 0 || this.target === null) {
+                        this.target = p.createVector(
+                            p.random(p.width),
+                            p.random(p.height * 0.7)
+                        );
+                        this.targetTimer = p.random(30, 120);
+                    }
+                    
+                    const targetDir = p5.Vector.sub(this.target, this.pos);
+                    if (targetDir.mag() < 10) {
+                        this.targetTimer = 0;
+                    } else {
+                        targetDir.normalize().mult(0.2);
+                        this.vel.add(targetDir);
+                    }
+                    
+                    // Add some randomness
+                    this.vel.add(p5.Vector.random2D().mult(0.1));
+                    this.vel.limit(2);
+                    
+                    // Apply wind
+                    this.vel.add(p5.Vector.mult(windForce, 0.3));
+                    
+                    this.pos.add(this.vel);
+                    this.angle = this.vel.heading();
+                    this.wingPhase += 0.3;
+                    this.targetTimer--;
+                    
+                    // Wrap around edges
+                    if (this.pos.x < 0) this.pos.x = p.width;
+                    if (this.pos.x > p.width) this.pos.x = 0;
+                    if (this.pos.y < 0) this.pos.y = p.height * 0.7;
+                    if (this.pos.y > p.height * 0.7) this.pos.y = 0;
+                }
+                
+                display() {
+                    p.push();
+                    p.translate(this.pos.x, this.pos.y);
+                    p.rotate(this.angle);
+                    
+                    // Body
+                    p.noStroke();
+                    p.fill(240, 200, 30);
+                    p.ellipse(0, 0, this.size, this.size * 0.7);
+                    
+                    // Stripes
+                    p.fill(30);
+                    p.ellipse(0, 0, this.size * 0.8, this.size * 0.5);
+                    p.ellipse(0, -this.size * 0.2, this.size * 0.6, this.size * 0.3);
+                    
+                    // Wings
+                    p.fill(255, 200);
+                    const wingY = p.sin(this.wingPhase) * 3;
+                    p.ellipse(-this.size * 0.3, wingY - this.size * 0.3, this.size * 0.8, this.size * 0.5);
+                    p.ellipse(-this.size * 0.3, wingY + this.size * 0.3, this.size * 0.8, this.size * 0.5);
+                    
+                    p.pop();
+                }
+            }
+            
+            class GrassBlade {
+                constructor(x) {
+                    this.x = x;
+                    this.y = p.height;
+                    this.height = p.random(20, 80);
+                    this.thickness = p.random(1, 3);
+                    this.windOffset = p.random(1000);
+                    this.color = p.color(40, p.random(100, 180), 40);
+                }
+                
+                update(wind) {
+                    this.windOffset += 0.01;
+                    const windEffect = p.map(p.noise(this.windOffset + p.frameCount * 0.02), 0, 1, -0.5, 1.5);
+                    this.bend = wind.x * 30 * windEffect;
+                }
+                
+                display() {
+                    p.push();
+                    p.translate(this.x, this.y);
+                    
+                    p.noFill();
+                    p.stroke(this.color);
+                    p.strokeWeight(this.thickness);
+                    
+                    p.beginShape();
+                    p.vertex(0, 0);
+                    p.quadraticVertex(this.bend, -this.height * 0.3, this.bend * 1.5, -this.height);
+                    p.endShape();
+                    
+                    p.pop();
+                }
+            }
+            
+            p.setup = () => {
+                const canvas = p.createCanvas(p.windowWidth, p.windowHeight);
+                canvas.position(0, 0);
+                p.colorMode(p.RGB);
+                
+                // Initialize flowers
+                for (let i = 0; i < MAX_FLOWERS; i++) {
+                    flowers.push(new Flower(
+                        p.random(p.width),
+                        p.random(p.height * 0.3, p.height * 0.7)
+                    ));
+                }
+                
+                // Initialize bees
+                for (let i = 0; i < 10; i++) {
+                    bees.push(new Bee());
+                }
+                
+                // Initialize grass
+                for (let i = 0; i < MAX_GRASS; i++) {
+                    grassBlades.push(new GrassBlade(
+                        p.random(p.width)
+                    ));
+                }
+                
+                // Load control panel state
+                const controlsState = localStorage.getItem('showControls');
+                if (controlsState !== null) {
+                    showControls = controlsState === 'true';
+                    document.getElementById('controls').style.display = showControls ? 'block' : 'none';
+                }
+                
+                // Setup control toggling
+                document.getElementById('toggleControls').addEventListener('click', () => {
+                    showControls = !showControls;
+                    document.getElementById('controls').style.display = showControls ? 'block' : 'none';
+                    localStorage.setItem('showControls', showControls);
+                });
+                
+                // Setup control event listeners
+                document.getElementById('windStrength').addEventListener('input', updateWind);
+                document.getElementById('windDirection').addEventListener('input', updateWind);
+                document.getElementById('beeCount').addEventListener('input', updateBeeCount);
+                document.getElementById('timeOfDay').addEventListener('input', updateTimeOfDay);
+                
+                updateWind();
+                updateTimeOfDay();
+            };
+            
+            p.draw = () => {
+                // Update time of day effects
+                updateSkyColor();
+                
+                // Draw sky gradient
+                drawSky();
+                
+                // Update and draw grass
+                for (let blade of grassBlades) {
+                    blade.update(windForce);
+                    blade.display();
+                }
+                
+                // Update and draw flowers
+                for (let flower of flowers) {
+                    flower.update(windForce);
+                    flower.display();
+                }
+                
+                // Update and draw bees
+                for (let bee of bees) {
+                    bee.update();
+                    bee.display();
+                }
+                
+                // Draw ground
+                p.noStroke();
+                p.fill(60, 140, 60);
+                p.rect(0, p.height * 0.7, p.width, p.height * 0.3);
+            };
+            
+            p.windowResized = () => {
+                p.resizeCanvas(p.windowWidth, p.windowHeight);
+            };
+            
+            function updateWind() {
+                const strength = parseFloat(document.getElementById('windStrength').value);
+                const direction = parseFloat(document.getElementById('windDirection').value);
+                windForce = p5.Vector.fromAngle(p.radians(direction)).mult(strength);
+            }
+            
+            function updateBeeCount() {
+                const targetCount = parseInt(document.getElementById('beeCount').value);
+                while (bees.length > targetCount && bees.length > 0) {
+                    bees.pop();
+                }
+                while (bees.length < targetCount && bees.length < MAX_BEES) {
+                    bees.push(new Bee());
+                }
+            }
+            
+            function updateTimeOfDay() {
+                timeOfDay = parseInt(document.getElementById('timeOfDay').value);
+            }
+            
+            function updateSkyColor() {
+                // Calculate sky color based on time of day
+                const hour = timeOfDay;
+                let r, g, b;
+                
+                if (hour >= 6 && hour < 18) { // Daytime
+                    const dayProgress = (hour - 6) / 12;
+                    r = p.lerp(135, 100, dayProgress);
+                    g = p.lerp(206, 180, dayProgress);
+                    b = p.lerp(235, 255, dayProgress);
+                } else { // Nighttime
+                    const nightProgress = hour < 6 ? hour / 6 : (hour - 18) / 6;
+                    r = p.lerp(10, 30, nightProgress);
+                    g = p.lerp(10, 30, nightProgress);
+                    b = p.lerp(30, 50, nightProgress);
+                }
+                
+                skyColor = p.color(r, g, b);
+            }
+            
+            function drawSky() {
+                // Draw sky gradient
+                p.noFill();
+                for (let y = 0; y < p.height * 0.7; y++) {
+                    const inter = p.map(y, 0, p.height * 0.7, 0, 1);
+                    let c;
+                    if (timeOfDay >= 6 && timeOfDay < 18) {
+                        c = p.lerpColor(p.color(255, 200, 100), skyColor, inter);
+                    } else {
+                        c = p.lerpColor(p.color(20, 10, 50), skyColor, inter);
+                    }
+                    p.stroke(c);
+                    p.line(0, y, p.width, y);
+                }
+                
+                // Draw sun/moon
+                const sunMoonX = p.map(timeOfDay, 0, 24, -100, p.width + 100);
+                const sunMoonY = p.height * 0.15 + p.sin(p.map(timeOfDay, 0, 24, 0, p.PI)) * p.height * 0.3;
+                
+                p.noStroke();
+                if (timeOfDay >= 6 && timeOfDay < 18) {
+                    p.fill(255, 220, 100);
+                    p.ellipse(sunMoonX, sunMoonY, 60, 60);
+                    
+                    // Sun rays
+                    p.push();
+                    p.translate(sunMoonX, sunMoonY);
+                    for (let i = 0; i < 12; i++) {
+                        const angle = p.TWO_PI * i / 12;
+                        p.rotate(angle);
+                        p.fill(255, 220, 100, 150);
+                        p.triangle(30, 0, 50, -10, 50, 10);
+                        p.rotate(-angle);
+                    }
+                    p.pop();
+                } else {
+                    p.fill(220, 220, 240);
+                    p.ellipse(sunMoonX, sunMoonY, 50, 50);
+                    
+                    // Moon craters
+                    p.fill(200, 200, 220);
+                    p.ellipse(sunMoonX - 10, sunMoonY - 10, 8, 8);
+                    p.ellipse(sunMoonX + 15, sunMoonY, 12, 12);
+                    p.ellipse(sunMoonX + 5, sunMoonY + 15, 5, 5);
+                }
+            }
+        };
+        
+        new p5(sketch);
+    </script>
+
+              
+          
+                
+          
+              
